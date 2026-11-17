@@ -1,0 +1,9 @@
+__pycache__/
+.ruff_cache/
+state/
+doctor-report/
+doctor-demo/
+campaign/campaign.toml
+*.local.toml
+my.toml
+*password*.txt

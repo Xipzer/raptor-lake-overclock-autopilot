@@ -1,0 +1,129 @@
+# Raptor Lake OC Autopilot
+
+Automatic Intel 13th/14th gen CPU and DDR5 RAM overclocking, undervolting and stability testing, with ASRock BIOS
+automation built in.
+
+**This is the specialised edition, for Intel Raptor Lake and Raptor Lake Refresh (Core i5/i7/i9 13th and 14th gen,
+for example the 13900K, 14900K and 14900KS) with DDR5 only.** It knows that platform's quirks and safety limits.
+For any other platform, or to build your own extension, use the generic core:
+[overclock-autopilot](https://github.com/Xipzer/overclock-autopilot).
+
+It changes one BIOS setting per step, reboots, reads back what the BIOS really applied, runs the right stability
+test, and keeps a value only after it passes. It recovers by itself from crash loops and failed memory training,
+and tells you plainly when only your hands can help.
+
+What came out of the campaign this tool is built from (results, failures and mistakes):
+[raptor-lake-field-notes](https://github.com/Xipzer/raptor-lake-field-notes).
+
+## Status
+
+| Part | Today | Notes |
+|---|---|---|
+| `tuner.py doctor`: read-only quirk check of your PC | Works | Microcode, VBS, crash dumps, WHEA history per core, SCEWIN export, DIMM temperatures |
+| `tuner.py check / plan / simulate`: validate a plan, dry-run it on a simulated PC | Works | No hardware touched. 86 unit tests |
+| Sweep engine (`start`, `run`, `mark`, `optin`, `control`, `resume`) | Works in simulation; manual backend usable | One change per step, two passes to keep, controls, step-back |
+| ASRock backend (AMI SCEWIN with `/cpwd`) | Supported | The same write path ran the reference campaign on a Z790 board |
+| MSI, ASUS, Gigabyte backends | Not implemented | Use the manual backend, or add a plugin: [docs/VENDORS.md](docs/VENDORS.md) |
+| Startup failsafe v2 (`tools/failsafe.ps1`) | Works | Restores the last good values after a failed boot; cannot fix a no-POST or a hard freeze |
+| Tests: y-cruncher, memlat, WHEA, Shakedown (CPU), generic commands | Works | |
+| Tests: memhold (at-rest refresh test), TestMem5 | Ported, parsers tested | Not yet run through the harness on hardware (they ran in the campaign scripts) |
+| Campaign scripts (`campaign/`) | Ran the full reference campaign | Reference implementation: RAM sweep, validation ladder, memory track with a CPU temperature guard. Needs your own plan |
+| CPU-cool memory testing (core-set ramp, temperature guard) in the harness | Planned | Exists in `campaign/memtrack.py` today |
+| Real-use temperature capture, full-page drift diff, report generator | Planned | See [docs/METHOD.md](docs/METHOD.md) |
+| AMD, DDR4, non-AMI firmware, GPU tuning | Out of scope | Use the core repo |
+
+## Safety, in plain words
+
+Read this before you run anything that writes.
+
+- **Writing BIOS settings can stop your PC from starting.** A memory timing that is too tight can hang the board
+  before it shows a picture. Know where your Clear CMOS jumper is. Save your working profile to a BIOS slot or USB.
+- **Unstable memory corrupts data silently.** Back up first. Run `chkdsk /scan C:` and `sfc /scannow` after any crash.
+- **Voltage damages Raptor Lake over time.** Intel says 13th and 14th gen CPUs age faster with voltage and heat.
+  Update to microcode 0x12B or newer first. The tool caps voltages by default; raising a cap is your decision, written
+  in the config with a reason.
+- **The safety machinery weakens Windows on purpose while a sweep runs** (no crash dumps, no Windows Recovery after
+  failed boots, a SYSTEM task that can rewrite the BIOS at startup). `tuner.py restore --yes` undoes it.
+- **The automatic mode needs your BIOS administrator password** (ASRock blocks SCEWIN writes without it). It is read
+  from a file you name in the config, or from the `RLAP_BIOS_PASSWORD` environment variable, and masked in all
+  output. Make that file readable by administrators only. It is never stored in code.
+- **Nothing here makes a setting safe for daily use.** A sweep finds candidates. Long validation at your real-use
+  temperature makes a daily profile. You own the outcome.
+
+## Requirements
+
+- Windows 10 or 11 on a Raptor Lake CPU with DDR5.
+- Python 3.11 or newer, standard library only. Runs natively on Windows; the campaign scripts run in WSL.
+- For automatic BIOS writes: an ASRock board with AMI firmware, and **SCEWIN** (`SCEWIN_64.exe` and its driver
+  files), which you get yourself from your board vendor's or AMI's utility package. It is not included here. Check
+  that it is AMI-signed.
+- Optional: [PawnIO](https://pawnio.eu) with its signed SmbusI801 module for DIMM temperatures (`tools/dimmtemp.c`),
+  HWiNFO (it initialises DDR5 sensors after a cold boot), y-cruncher, TestMem5 0.13.1, Cinebench, and the core
+  tool's `shakedown-cli` for CPU tests with per-core error mapping.
+- Build the C tools with `zig cc -O2 -o memlat.exe memlat.c -target x86_64-windows-gnu -ladvapi32` (same for
+  `dimmtemp.c` and `memhold.c`).
+
+## Quick start
+
+Start read-only, on the machine, in an elevated prompt:
+
+```
+python tuner.py doctor                              # which known quirks apply to this PC
+python tuner.py vendors                             # which board vendors are supported
+python tuner.py names export.txt --grep tRFC        # find your BIOS question names in a SCEWIN export
+```
+
+Then make a plan and dry-run it:
+
+```
+copy examples\reference-14900ks-z790i-lightning.toml my.toml     (edit settings, groups, tests, paths)
+python tuner.py check -c my.toml
+python tuner.py plan -c my.toml
+python tuner.py simulate -c my.toml --owner
+```
+
+Then, only when you have read [docs/METHOD.md](docs/METHOD.md):
+
+```
+python tuner.py install failsafe --yes              # optional safety machinery; also crashdumps, bcdedit, autostart
+python tuner.py start -c my.toml                    # saves the pre-sweep BIOS as golden.txt
+python tuner.py run -c my.toml                      # one boot's worth of work; runs again after each reboot
+python tuner.py status -c my.toml
+python tuner.py restore --yes                       # when finished: undo the safety machinery
+```
+
+With `[backend] type = "manual"` it prints the values for you to enter in the BIOS and asks what happened after the
+boot. That works on any board.
+
+Dry run of the doctor on fake data, on any OS:
+
+```
+python tuner.py doctor --no-probes --scewin-file examples/fake-scewin-export.txt --facts examples/doctor-facts-reference.json --out doctor-demo
+```
+
+## What is in the repo
+
+| Path | What |
+|---|---|
+| `tuner.py` | The command line |
+| `rlh/engine.py` | Sweep state machine: phases, outcome classes, groups, controls, step-back |
+| `rlh/backends.py`, `rlh/backend_api.py` | SCEWIN and manual backends; the interface every backend implements |
+| `rlh/vendors/` | Board vendor plugins: `asrock` supported; `msi`, `asus`, `gigabyte` stubs that say so |
+| `rlh/scewin.py` | SCEWIN script parser and editor (handles the live value inside prompts) |
+| `rlh/rules.py`, `rlh/config.py` | Safety limits and tuning rules, checked before every step |
+| `rlh/testsuite.py` | Tests and their parsers, temperature watchdogs |
+| `rlh/installers.py` | Optional Windows safety machinery and the restore list |
+| `rlh/doctor/`, `quirks/*.toml` | Quirk detection and the knowledge base, with sources |
+| `rlh/sim.py` | A simulated PC for dry runs and tests |
+| `tools/failsafe.ps1` | Startup failsafe v2 |
+| `tools/memlat.c`, `tools/dimmtemp.c`, `tools/memhold.c` | Latency/bandwidth meter, DDR5 DIMM temperature reader, at-rest memory test |
+| `tools/windows/` | Elevated helpers for the campaign scripts and their one-time installer |
+| `campaign/` | The scripts that ran the reference campaign, cleaned and made configurable ([campaign/README.md](campaign/README.md)) |
+| `examples/` | The reference RAM plan as a config, a synthetic SCEWIN export, doctor facts |
+| `tests/` | Unit tests on synthetic data: `cd tests && python -m unittest discover -s .` |
+| `docs/METHOD.md` | The FAFO workflow, test ladder and step-back rules |
+| `docs/VENDORS.md` | ASRock support and how to add your board |
+
+## Licence
+
+[PolyForm Noncommercial 1.0.0](LICENSE.md). Free for personal and other noncommercial use.

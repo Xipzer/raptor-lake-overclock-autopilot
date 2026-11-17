@@ -1,0 +1,44 @@
+# Cooling and measurement quirks. Most facts here can only come from you: state them under [doctor.facts].
+#   cooling.cpu_after_gpu = true        the CPU block sits downstream of the GPU in the loop
+#   cooling.sensor_upstream_of_cpu = true  the coolant sensor is not right before the CPU block (for example at the pump)
+#   cooling.liquid_metal = true
+
+[[quirk]]
+id = "loop-sensor-position"
+title = "The coolant sensor does not see the water the CPU gets"
+category = "thermal"
+severity = "NOTE"
+confidence = "source"
+detect = [{ fact = "cooling.cpu_after_gpu", op = "true" }, { fact = "cooling.sensor_upstream_of_cpu", op = "true" }]
+symptom = "At the same coolant reading, CPU cores run 3 to 4 C hotter when the GPU is loaded."
+cause = "With the CPU after the GPU (and a radiator), its water is warmer than at a sensor placed at the pump, the coolest point. Measured on one loop: GPU heat added about 3 to 4 C on the cores at the same pump reading."
+remediation = ["Test with the GPU loaded the way you use the PC, and set water limits with that offset in mind (or move the sensor to the CPU inlet)."]
+tuning = "Start every CPU run at the same loop temperature, with the GPU load you really have."
+sources = ["own measurement: reference machine (raptor-lake-field-notes), 12 Nov (cpu/thermals.md)"]
+
+[[quirk]]
+id = "core-to-water-drift"
+title = "Core-to-water per 100 W is drifting up (check the TIM or liquid metal)"
+category = "thermal"
+severity = "WARN"
+confidence = "inference"
+platform = { "cpu.vendor" = ["intel"] }
+detect = [{ fact = "thermal.c_per_100w_drift", op = "ge", value = 1.5 }]
+symptom = "At the same load, the hottest core sits further above the water than it did weeks ago."
+cause = "The core-to-water gap divided by package power is a load-independent fingerprint of the thermal path. On one direct-die liquid metal setup it stayed at 12.0 to 12.6 C per 100 W over 7 hours at 400 W; a steady rise means pump-out, drying or a mount change."
+remediation = ["Compare against your first runs at the same load; if it keeps rising, inspect the TIM or liquid metal and the mount."]
+tuning = "A thermal path that degrades makes every earlier voltage floor too low."
+sources = ["own measurement: reference machine (raptor-lake-field-notes), 12 Nov 03:48 to 10:57 (cpu/thermals.md)"]
+
+[[quirk]]
+id = "core-to-water-metric"
+title = "Track core-to-water per 100 W to catch TIM or liquid metal degradation"
+category = "thermal"
+severity = "INFO"
+confidence = "inference"
+platform = { "cooling.liquid_metal" = true }
+symptom = "None yet; this is a habit, not a fault."
+cause = "Liquid metal can pump out or alloy over time. The gap per 100 W is the simplest way to see it without opening the loop."
+remediation = ["Keep a run ledger (Shakedown writes one) and run `tuner.py doctor --ledger ledger.csv` now and then: it reports the first and latest averages and the drift."]
+tuning = "Re-check after any remount."
+sources = ["own measurement: reference machine (raptor-lake-field-notes), 12 Nov (cpu/thermals.md)"]

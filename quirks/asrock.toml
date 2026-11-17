@@ -1,0 +1,280 @@
+# Board quirks: ASRock (Z790 family, with Z790I Lightning WiFi specifics) and ASUS SCEWIN notes.
+
+[[quirk]]
+id = "asrock-fixed-vcore-at-vrm"
+title = "ASRock fixed Vcore is set at the VRM, not the CPU's overclocking mailbox"
+category = "board"
+severity = "NOTE"
+confidence = "source"
+platform = { "board.vendor" = ["asrock"], "cpu.vendor" = ["intel"] }
+detect = [{ fact = "bios.vcore_fixed", op = "true" }]
+symptom = "Mailbox tools (XTU, ThrottleStop, Shakedown oc) read the cores as adaptive with no offset, and voltage changes through the mailbox do nothing to the real Vcore."
+cause = "In ASRock Fixed Mode the board's VRM controller holds the setpoint. The mailbox reports what the CPU requests, which the VRM ignores."
+remediation = [
+  "Change Vcore in the BIOS, or live with ASRock A-Tuning (it writes the VRM).",
+  "Read voltages from HWiNFO VR VOUT, not from mailbox VID.",
+]
+tuning = "A harness CPU group on this board must use the BIOS question (Fixed Voltage(V)) as its setting."
+sources = ["own measurement: reference machine (raptor-lake-field-notes), 12 Nov (mailbox reads cores adaptive/0 while Vcore is fixed 1.340 V)"]
+
+[[quirk]]
+id = "asrock-vcore-sensor-socket-sense"
+title = "ASRock Vcore sensor reads socket voltage, higher than the die under load"
+category = "board"
+severity = "NOTE"
+confidence = "source"
+platform = { "board.vendor" = ["asrock"], "board.model" = "Z790" }
+symptom = "With a flat load-line the Vcore reading rises under load, as if the board overshoots."
+cause = "The sensor measures upstream of the socket and package resistance. VR VOUT (HWiNFO 8.02 or newer) is closer to the die."
+remediation = ["Compare LLC levels and voltage floors with HWiNFO VR VOUT, never with the SIO Vcore reading."]
+tuning = "Record VR VOUT under load as your proven die voltage."
+sources = [
+  "https://www.overclock.net/threads/asrock-z790-nova-wifi-z790i-lightning-wifi-thread.1808124/page-27",
+  "https://www.hwinfo.com/version-history/",
+]
+
+[[quirk]]
+id = "asrock-llc-levels"
+title = "ASRock LLC levels in mOhm (community measurements on the Z790 Nova)"
+category = "board"
+severity = "INFO"
+confidence = "thin"
+platform = { "board.vendor" = ["asrock"], "board.model" = "Z790" }
+detect = [{ fact = "bios.llc", op = "exists" }]
+symptom = "LLC is shown only as Level 1 to 5 with no impedance."
+cause = "Measured by owners (VR VOUT / IOUT): Level 1 about 0.20, Level 2 0.60, Level 3 0.74 to 0.88, Level 4 1.10, Level 5 1.70 mOhm. Not measured on the Lightning ITX, whose VRM differs. In fixed mode a flatter level gives a lower average voltage for the same loaded voltage."
+remediation = ["Measure your own board: R = (VOUT idle - VOUT load) / (IOUT load - IOUT idle), from a HWiNFO log."]
+tuning = "If you compare LLC levels in fixed mode, hold loaded VR VOUT equal and prefer the level with the lower idle VOUT. Re-check LLC after every Vcore edit (see asrock-llc-reset)."
+sources = [
+  "https://www.overclock.net/threads/asrock-z790-nova-wifi-z790i-lightning-wifi-thread.1808124/page-25",
+  "https://www.reddit.com/r/overclocking/comments/1bsh3hs/acdc_ll_tuning_for_dummies/",
+]
+
+[[quirk]]
+id = "asrock-llc-reset"
+title = "LLC can reset to Level 1 after a Vcore edit"
+category = "board"
+severity = "NOTE"
+confidence = "thin"
+platform = { "board.vendor" = ["asrock"], "board.model" = "Z790" }
+symptom = "You set Level 3, edit the voltage, and the board runs Level 1."
+cause = "Reported BIOS input bug on Z790I Lightning BIOSes with 12B microcode."
+remediation = ["After any Vcore edit, check LLC again before saving (or in a SCEWIN export)."]
+tuning = "Add the LLC question to the harness watch list if you sweep Vcore."
+sources = ["https://www.overclock.net/threads/asrock-z790-nova-wifi-z790i-lightning-wifi-thread.1808124/page-162"]
+
+[[quirk]]
+id = "asrock-rail-names"
+title = "ASRock names: VDD_IMC is VDDQ_TX, VDD_CPU is VDD2"
+category = "memory-controller"
+severity = "INFO"
+confidence = "source"
+platform = { "board.vendor" = ["asrock"], "cpu.vendor" = ["intel"], "mem.type" = ["DDR5"] }
+symptom = "Guides talk about TX and VDD2; the ASRock BIOS shows VDD_IMC and VDD_CPU."
+cause = "HWiNFO shows VDD_IMC as VDDQ TX and VDD_CPU as VDD2 on these boards (owner reports). VDD_MRC has no reliable mapping; leave it on Auto."
+remediation = ["Verify once: change one of them by 20 mV and see which HWiNFO sensor moves."]
+tuning = "Map settings TX -> 'VDD_IMC Voltage' (limit vddq_tx_mv) and VDD2 -> 'VDD_CPU Voltage' (limit vdd2_mv) in the harness config."
+sources = ["https://www.overclock.net/threads/asrock-z790-nova-wifi-z790i-lightning-wifi-thread.1808124/page-24 (post 475)", "https://www.overclock.net/threads/asrock-z790-nova-wifi-z790i-lightning-wifi-thread.1808124/page-54 (post 1080)"]
+
+[[quirk]]
+id = "asrock-auto-tx-follows-xmp"
+title = "Auto TX / VDD2 follow the XMP DRAM voltage (above daily recommendations)"
+category = "memory-controller"
+severity = "WARN"
+confidence = "source"
+platform = { "board.vendor" = ["asrock"], "mem.type" = ["DDR5"] }
+detect = [{ fact = "bios.tx_effective_mv", op = "gt", value = 1350 }, { fact = "bios.vdd2_effective_mv", op = "gt", value = 1450 }]
+detect_mode = "any"
+symptom = "With XMP on and the CPU-side memory rails on Auto, VDD_IMC (TX) and VDD_CPU (VDD2) run at the DRAM voltage, often 1.45 V."
+cause = "ASRock's auto rule sets both rails to the XMP voltage. Experienced daily tuners keep TX at or below 1.30 to 1.35 V and VDD2 at 1.40 to 1.45 V."
+remediation = [
+  "Set TX by hand and step it down (for example 1.40, 1.35, 1.30 V), two passing runs each.",
+  "Keep VDD2 at 1.40 to 1.45 V; lower it only if tests stay clean.",
+]
+tuning = "Do the voltage pass first: lower TX before tightening timings. Raise TX one small step only if a later step causes a training failure that did not happen before."
+implications = [
+  { action = "order_first", settings = ["TX", "VDD2"] },
+  { action = "note", text = "Lower TX (VDD_IMC) to 1.30-1.35 V before timing work; raise it only on a new training failure" },
+]
+sources = [
+  "https://www.overclock.net/threads/asrock-z790-nova-wifi-z790i-lightning-wifi-thread.1808124/page-190 (posts 3783, 3785, 3789, 3798)",
+  "https://forum-en.msi.com/index.php?threads/z790-carbon-wifi-i9-13900k-crashing-cinebench.387673/page-4",
+]
+
+[[quirk]]
+id = "asrock-voltage-mode-lock"
+title = "VDD_CPU / VDD_IMC capped near 1.40 to 1.42 V unless Voltage Mode = OC Mode"
+category = "board"
+severity = "INFO"
+confidence = "source"
+platform = { "board.vendor" = ["asrock"], "board.model" = "Z790" }
+detect = [{ fact = "bios.voltage_mode", op = "not_regex", value = "oc" }]
+symptom = "A higher VDD_IMC or VDD_CPU value is not applied."
+cause = "ASRock locks these rails below about 1.41 V unless OC Mode is set (ASRock's own post in the owners' thread)."
+remediation = ["If you really need more (you rarely should for daily use), set Voltage Mode = OC Mode, and keep the harness limits."]
+tuning = "A NOT APPLIED on a TX or VDD2 step above 1.41 V can be this lock, not training."
+sources = ["https://www.overclock.net/threads/asrock-z790-nova-wifi-z790i-lightning-wifi-thread.1808124/ (post 1)"]
+
+[[quirk]]
+id = "asrock-twr-leaves-trtp"
+title = "tWR set alone leaves tRTP unchanged; tRTP is its own setting (and reads back one lower)"
+category = "timings"
+severity = "NOTE"
+confidence = "source"
+platform = { "board.vendor" = ["asrock"], "mem.type" = ["DDR5"] }
+symptom = "Setting tRTP 20 boots with tRTP 19. It is easy to misread that as tRTP being derived from tWR when both were changed in one step."
+cause = "On the Z790I Lightning (BIOS 10.01) tWR and tRTP are separate settings. tWR set alone (48 down to 22) left tRTP at its XMP value of 23 every time. The 19 came from setting tRTP 20 explicitly: an explicit tRTP reads back one clock less than entered (20 gave 19, 19 gave 18). We first logged this as 'the BIOS derives tRTP from tWR'; that was wrong."
+remediation = ["Tune tWR and tRTP as two separate steps. Read tRTP back after every boot and use the read-back value, not the entered one."]
+tuning = "There is no tWR floor for tRTP's sake. The tRAS floor is tRCD + the read-back tRTP (73 at tRCD 50 and tRTP 23 here, not about 61). Do not declare tRTP with follows = [\"tWR\"]: if tRTP moves on a tWR step, something else happened. The harness limit trtp_min applies to tRTP steps and to the read-back tRTP. Because the read-back is one lower than entered, a tRTP step is classified NOT APPLIED on this board and is not tested."
+implications = [{ action = "readback", settings = ["tRTP"] }]
+sources = ["own measurement: reference machine (raptor-lake-field-notes) RAM journal, 13 Nov 14:59, 15:03 and 16:45 (corrects the 12 Nov 20:42 entry)", "https://pakt.cc/en/ddr5/timings/"]
+
+[[quirk]]
+id = "intel-twtr-via-twrrd"
+title = "tWTR is set through tWRRD on Intel (and ASRock shows offset values)"
+category = "timings"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel"], "mem.type" = ["DDR5"] }
+symptom = "A direct tWTR_L/S write comes back clamped (for example 36/12 -> 42/18) without a retrain; tools disagree about tWTR by about 6 clocks."
+cause = "On Intel, tWTR_S and tWTR_L follow tWRRD_dg and tWRRD_sg (and tCWL). ASRock owners report BIOS and Timing Configurator values about 6 cycles off."
+remediation = ["Tune tWRRD_dg / tWRRD_sg instead of tWTR. Re-read them after any tCWL change. Read back with more than one tool."]
+tuning = "Leave tWTR on Auto; sweep tWRRD_dg first (bigger effect than _sg)."
+implications = [{ action = "skip", settings = ["tWTR_L", "tWTR_S"], reason = "set through tWRRD_sg/dg on Intel" }]
+sources = ["https://www.overclock.net/threads/official-intel-ddr5-oc-and-24-7-daily-memory-stability-thread.1794772/ (post 1, Arni90)", "https://github.com/integralfx/MemTestHelper/blob/oc-guide/DDR4%20OC%20Guide.md", "own measurement: reference machine (raptor-lake-field-notes) RAM journal, 12 Nov 22:50"]
+
+[[quirk]]
+id = "asrock-timing-optimization"
+title = "ASRock Timing Optimization may rewrite timings left on Auto"
+category = "timings"
+severity = "NOTE"
+confidence = "inference"
+platform = { "board.vendor" = ["asrock"] }
+detect = [{ fact = "bios.timing_optimization", op = "regex", value = "enabled" }]
+symptom = "Auto timings change when you set an unrelated one."
+cause = "The manual says the memory timings use ASRock optimised values when it is enabled. That fits auto timings moving after single changes."
+remediation = ["Set every timing you care about explicitly, or disable it and compare the trained values."]
+tuning = "Put timings you rely on into the kept set explicitly; add the rest to the harness watch list so drift is seen."
+sources = ["https://download.asrock.com/Manual/Software/Intel%20Z790/Software_BIOS%20Setup%20Guide_English.pdf"]
+
+[[quirk]]
+id = "asrock-boot-failure-guard"
+title = "Boot Failure Guard: what it does after failed boots"
+category = "recovery"
+severity = "NOTE"
+confidence = "source"
+platform = { "board.vendor" = ["asrock"] }
+detect = [{ fact = "bios.bfg_enabled", op = "true" }]
+symptom = "After failed boots the BIOS shows a Boot Failure Guard message and continues. Sometimes the memory comes up in fail-safe (for example DDR5-3600, tCL 29, tRFC 395) while NVRAM still holds every setting; sometimes defaults are loaded."
+cause = "The guard counts failed boots (count configurable 2 to 250, default 4). On a hard training hang (no POST) the board may not retrain by itself: on one machine it needed 5 manual power cycles before the guard took over."
+remediation = [
+  "Know your count (bios.bfg_count) and where the Clear CMOS jumper is before a sweep.",
+  "After any rough boot, check that the BIOS is not on defaults or fail-safe memory before testing (the harness checks the profile question and the fallback signature).",
+]
+tuning = "A no-POST step needs a person. Mark it with `tuner.py mark no-post`."
+sources = ["https://download.asrock.com/Manual/Software/Intel%20Z790/Software_BIOS%20Setup%20Guide_English.pdf", "own measurement: reference machine (raptor-lake-field-notes) tRDRD_sg 14, 13 Nov 07:12 to 07:53"]
+
+[[quirk]]
+id = "mrc-fast-boot-hides-retrain"
+title = "MRC Fast Boot hides retrain instability"
+category = "memory-controller"
+severity = "WARN"
+confidence = "source"
+platform = { "mem.type" = ["DDR5"] }
+detect = [{ fact = "bios.mrc_fast_boot", op = "regex", value = "^(enabled|auto)$" }]
+symptom = "A profile passes every test, then fails after a CMOS clear, BIOS update or power loss, or after some cold boots."
+cause = "Fast boot skips most memory training and reuses saved results. Raptor Lake IMCs can hold settings for a while that they cannot train reliably; owners report retrain failures in the first 3 to 5 iterations or after 10 to 15 cold boots."
+remediation = [
+  "Disable MRC Fast Boot while testing.",
+  "Finish with 3 to 5 full cold boots (PSU off) and a VT3 pass after each.",
+  "Enable fast boot afterwards if you like; it hides variance, it does not fix it.",
+]
+tuning = "Every sweep step should boot with a full retrain."
+implications = [{ action = "note", text = "Disable MRC Fast Boot during the sweep; add cold-boot retrain runs to the final validation" }]
+sources = ["https://www.overclock.net/threads/asrock-z790-nova-wifi-z790i-lightning-wifi-thread.1808124/page-149 (post 2974)", "https://www.overclock.net/threads/official-intel-ddr5-oc-and-24-7-daily-memory-stability-thread.1794772/ (pages 1748, 1749)"]
+
+[[quirk]]
+id = "asrock-realtime-memory-timing"
+title = "Realtime Memory Timing is enabled"
+category = "timings"
+severity = "INFO"
+confidence = "inference"
+platform = { "board.vendor" = ["asrock"] }
+detect = [{ fact = "bios.realtime_timing", op = "regex", value = "enabled" }]
+symptom = "Timings can be changed live from Windows tools."
+cause = "Live changes cannot retrain, so primaries and anything training-dependent still need a reboot. Whether it works under VBS on these boards is untested."
+remediation = ["Use it for quick exploration only; validate every value after a full retrain boot."]
+tuning = "The harness always reboots; leave this as it is."
+sources = ["own: reference machine (raptor-lake-field-notes) SCEWIN export and tests, 12 Nov"]
+
+[[quirk]]
+id = "asrock-runtime-variable-protection"
+title = "SCEWIN imports blocked by runtime variable protection (ASRock Z590 and newer)"
+category = "tooling"
+severity = "NOTE"
+confidence = "source"
+platform = { "board.vendor" = ["asrock"] }
+symptom = "SCEWIN exports fine, but imports change nothing."
+cause = "ASRock protects runtime setup variables with a password. SCEHUB says a modded BIOS is needed; setting a BIOS Administrator password and importing with /cpwd worked on a Z790I Lightning."
+remediation = [
+  "Set a BIOS Administrator (supervisor) password.",
+  "Store it in a file only administrators can read, and give its path as backend.password_file.",
+  "Test one harmless write and its re-export before trusting the setup.",
+]
+tuning = "Expect a harmless warning on every import: 'Error in writing variable TcgStorageDynamicSetupVar to NVRAM'. Verify by re-export, which the harness does."
+sources = ["https://github.com/ab3lkaizen/SCEHUB", "https://gist.github.com/Arie/af8e353dec6ce6b47359529571ace45f"]
+
+[[quirk]]
+id = "asus-publish-hii"
+title = "ASUS: SCEWIN needs Publish HII Resources"
+category = "tooling"
+severity = "NOTE"
+confidence = "thin"
+platform = { "board.vendor" = ["asus"] }
+detect = [{ fact = "bios.publish_hii", op = "regex", value = "disabled" }]
+symptom = "The SCEWIN export lacks most setup questions, or imports are ignored."
+cause = "Community guides say ASUS boards publish the setup forms to the OS only with 'Publish HII Resources' enabled, and that runtime variable protection can also block imports. Not verified by us."
+remediation = ["Enable Publish HII Resources in the BIOS, export again, and check that your questions are present (`tuner.py names export.txt`).", "If imports still do nothing, use the manual backend."]
+tuning = "The harness verifies every write by re-export, so a silent block is reported, not missed."
+sources = ["https://github.com/ab3lkaizen/SCEHUB"]
+
+[[quirk]]
+id = "z790i-lightning-weak-slot"
+title = "Z790I Lightning: some boards have a weaker second DIMM slot"
+category = "board"
+severity = "LIMIT"
+confidence = "thin"
+platform = { "board.vendor" = ["asrock"], "board.model" = "Z790I Lightning" }
+symptom = "One slot posts lower than the other; the board is sensitive to mounting pressure."
+cause = "Owner reports: 'my 2nd memory slot is weaker' (posts 8800 vs 9066), 'botched dimm slot', and sensitivity to how tight the cooler mount is."
+remediation = []
+tuning = "If one DIMM reports errors first or runs hotter, swap the sticks once to see whether it follows the stick or the slot."
+sources = ["https://www.overclock.net/threads/asrock-z790-nova-wifi-z790i-lightning-wifi-thread.1808124/page-189 (posts 3761, 3767, 3792)"]
+
+[[quirk]]
+id = "z790i-lightning-single-eps"
+title = "Z790I Lightning: one 8-pin EPS for the whole CPU"
+category = "board"
+severity = "WARN"
+confidence = "inference"
+platform = { "board.model" = "Z790I Lightning" }
+detect = [{ fact = "cpu.package_w_max", op = "ge", value = 300 }]
+symptom = "None until a connector overheats."
+cause = "About 400 W of package power is roughly 440 to 460 W of 12 V input through one 8-pin EPS. Commonly cited ratings for one EPS connector are about 300 to 380 W, depending on terminals and wire."
+remediation = ["Use a good cable fully seated, touch-check the connector after a long run, and prefer settings that keep sustained package power lower."]
+tuning = "Long all-core tests at 400 W are a hardware risk of their own on this board."
+sources = ["https://www.tomshardware.com/pc-components/motherboards/asrock-z790i-lightning-wi-fi-review", "https://www.pcgamer.com/hardware/motherboards/asrock-z790i-lightning-wifi-motherboard-review/"]
+
+[[quirk]]
+id = "asrock-trfc-fallback-signature"
+title = "ASRock training fallback signature: tRFC 395"
+category = "recovery"
+severity = "INFO"
+confidence = "source"
+platform = { "board.vendor" = ["asrock"], "mem.type" = ["DDR5"] }
+symptom = "After a step the board boots slowly (135 to 282 s instead of about 45) and shows tRFC/tRFC2 395, tWR 54, tCL/tRCD/tRP 29."
+cause = "Memory training failed and the board fell back to safe timings. A plain clamp (the BIOS raising one value) changes only that value and boots at normal speed."
+remediation = ["The harness classifies this as NO TRAIN when values the step did not touch change; add fallback_signature = { tRFC = \"395\" } to [sweep]."]
+tuning = "Treat NO TRAIN as the end of that group; the value did not train."
+implications = [{ action = "note", text = "Set [sweep] fallback_signature = { tRFC = \"395\" } and watch tRFC, tCL, tRCD, tWR" }]
+sources = ["own measurement: reference machine (raptor-lake-field-notes) tRFC 630 and tCL 36, 12-13 Nov (ram/quirks.md)"]

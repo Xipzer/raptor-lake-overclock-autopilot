@@ -1,0 +1,178 @@
+# CPU quirks: Intel 13th/14th gen (Raptor Lake). Schema: see rlh/doctor/kb.py.
+# Evidence quality: source = published source; inference = reasoned, not stated; thin = one anecdote or unverified.
+
+[[quirk]]
+id = "rpl-microcode-old"
+title = "Microcode older than 0x12B on a 13th/14th gen CPU (Vmin shift fixes missing)"
+category = "cpu"
+severity = "WARN"
+confidence = "source"
+platform = { "cpu.family" = ["raptor-lake"] }
+detect = [{ fact = "cpu.microcode", op = "lt", value = 0x12B }]
+symptom = "Instability that gets worse over weeks or months, often first seen as crashes in games or shader compiles, or WHEA errors that move between cores."
+cause = "Intel traced the Vmin shift to a clock tree circuit in the IA core that ages under elevated voltage and temperature, including elevated voltage at idle or light load. Microcode 0x125, 0x129 and 0x12B fix the request paths in steps; 0x12F adds a fix for long low-activity uptime."
+remediation = [
+  "Update the BIOS to a release with microcode 0x12F (at least 0x12B). Check the vendor's release notes.",
+  "After the update, re-run your stability tests: the new microcode can change voltages and limits, and a BIOS update resets settings.",
+  "Re-run `tuner.py doctor` after the update.",
+]
+tuning = "Do not start a tuning sweep on old microcode: the results would not survive the update."
+implications = [{ action = "note", text = "Update microcode to 0x12F before tuning; results on old microcode do not carry over" }]
+sources = [
+  "https://community.intel.com/t/intel-core-13th-and-14th-gen-desktop-instability-root-cause-update/127016",
+  "https://community.intel.com/t/intel-core-13th-and-14th-gen-vmin-shift-instabilty-update-new-microcode-update-0x12f/132113",
+  "https://www.pugetsystems.com/labs/articles/impact-of-intel-microcode-0x12b-on-content-creation-performance/",
+]
+
+[[quirk]]
+id = "rpl-vmin-shift-limit"
+title = "Raptor Lake ages with voltage and temperature (Vmin shift)"
+category = "cpu"
+severity = "LIMIT"
+confidence = "source"
+platform = { "cpu.family" = ["raptor-lake"] }
+symptom = "A setting that was stable can stop being stable months later, with nothing changed."
+cause = "Intel: a clock tree circuit in the IA core is particularly vulnerable to reliability aging under elevated voltage and temperature. Microcode reduces the exposure; it does not make the part immune."
+remediation = []
+tuning = "Treat core voltage and temperature as a budget you spend permanently. Prefer the lowest voltage that passes long, hot tests, and re-test known-good settings every few months. The harness caps fixed Vcore at 1.40 V by default."
+sources = ["https://community.intel.com/t/intel-core-13th-and-14th-gen-desktop-instability-root-cause-update/127016"]
+
+[[quirk]]
+id = "rpl-fixed-vcore-idle"
+title = "Fixed Vcore bypasses the idle-voltage microcode fixes"
+category = "cpu"
+severity = "NOTE"
+confidence = "inference"
+platform = { "cpu.family" = ["raptor-lake"] }
+detect = [{ fact = "bios.vcore_fixed", op = "true" }]
+symptom = "None visible. The CPU sits at the BIOS setpoint (minus a little droop) at idle and light load, all day."
+cause = "0x12B and 0x12F lower the voltage requested at idle and light load. In fixed (override) mode the voltage regulator holds the BIOS value whatever the CPU requests, so those fixes have nothing to act on. Intel names elevated voltage at idle as one of the aging scenarios."
+remediation = [
+  "If you keep fixed mode: use the lowest setpoint that passes long, hot tests, and a flat load-line so the setpoint does not have to be raised to cover droop.",
+  "Compare against an adaptive or offset profile with a droopier load-line and AC/DC load-line calibrated to VR VOUT: it lets idle voltage fall well under 1.0 V.",
+]
+tuning = "Measure idle and light-load VR VOUT as well as loaded VOUT when you compare profiles."
+sources = [
+  "https://community.intel.com/t/intel-core-13th-and-14th-gen-desktop-instability-root-cause-update/127016",
+  "own research: research-llc-loadline (fixed mode and the 0x12B/0x12F scenarios)",
+]
+
+[[quirk]]
+id = "rpl-hot-under-load"
+title = "Core temperatures at or above 100 C under load"
+category = "cpu"
+severity = "WARN"
+confidence = "source"
+platform = { "cpu.family" = ["raptor-lake"] }
+detect = [{ fact = "cpu.load_temp_max_c", op = "ge", value = 100 }]
+symptom = "The hottest core reaches 100 C or more in your heaviest test."
+cause = "Intel's root-cause statement names elevated voltage AND temperature. Heat also lowers the stable frequency at a given voltage, so hot tests fail earlier."
+remediation = [
+  "Lower the voltage or the all-core ratio, or improve cooling, until the hottest core stays under about 100 C in your heaviest daily load.",
+  "If you keep it, set the harness core_temp_abort_c deliberately (it defaults to 100 C and raising it needs i_accept_the_risk).",
+]
+tuning = "Abort tests at your chosen core temperature; do not let a sweep run at the thermal limit."
+sources = ["https://community.intel.com/t/intel-core-13th-and-14th-gen-desktop-instability-root-cause-update/127016"]
+
+[[quirk]]
+id = "rpl-sa-bug"
+title = "14th gen SA bug: hard freezes above a chip-specific VCCSA"
+category = "memory-controller"
+severity = "NOTE"
+confidence = "thin"
+platform = { "cpu.family" = ["raptor-lake"] }
+symptom = "Hard freezes with no blue screen, or y-cruncher VT3 / TM5 crashing at once, after raising VCCSA past a point (reported between about 1.12 and 1.32 V)."
+cause = "Not documented by Intel. Community reports tie it to sample leakage; some say microcode 0x129 or later eased it."
+remediation = [
+  "Do not raise VCCSA as a general stabiliser. Find out whether your chip has it before any SA increase (guided check below).",
+  "If it does: stay below the freeze point; that usually caps memory frequency.",
+]
+procedure = [
+  "Start from a profile that is stable now. Note the current VCCSA.",
+  "Raise VCCSA by 10 to 20 mV (the harness limit vccsa_step_mv refuses bigger steps).",
+  "Run 5 to 10 minutes of y-cruncher VT3. Watch for a hard freeze or an instant failure.",
+  "Repeat up to your VCCSA ceiling (harness default 1.30 V).",
+  "The signature: a freeze that appears at one step and goes away one step lower. Record that voltage as your SA ceiling.",
+]
+tuning = "Step SA slowly, one change per step, and never combine an SA increase with another change."
+implications = [{ action = "cap", limit = "vccsa_step_mv", value = 20 }]
+sources = [
+  "https://www.overclock.net/threads/14900k-14900k-cpu-sa-voltage-issue-freezing-problem-and-solved.1808469/",
+  "https://www.overclock.net/threads/official-intel-ddr5-oc-and-24-7-daily-memory-stability-thread.1794772/ (pages 1287, 1307, 1319, 1482)",
+]
+
+[[quirk]]
+id = "rpl-imc-variance"
+title = "Memory controller quality varies a lot, even between KS chips"
+category = "memory-controller"
+severity = "LIMIT"
+confidence = "source"
+platform = { "cpu.family" = ["raptor-lake"], "mem.type" = ["DDR5"] }
+symptom = "Settings that others run daily fail on your machine at the same voltages."
+cause = "In one binning of 28 x 14900KS, one chip could not pass VT3 at 8200 C40 while another passed 8600 C40 at lower voltage. The IMC is not binned by the KS label."
+remediation = []
+tuning = "Use other people's results as a starting point for ranges, never as targets. Your own floors are the only ones that count; frequency above about 8400 often costs more SA and DIMM voltage for about 2% bandwidth."
+sources = ["https://www.overclock.net/threads/results-of-binning-28-x-14900ks-cpus.1811913/page-2"]
+
+[[quirk]]
+id = "rpl-error-core-is-not-cause"
+title = "A memory test error reported on a core does not mean that core is weak"
+category = "testing"
+severity = "INFO"
+confidence = "source"
+platform = { "cpu.family" = ["raptor-lake"] }
+symptom = "y-cruncher reports a checksum mismatch 'on logical core N', often an E-core."
+cause = "y-cruncher names the thread that found the bad result, not the part that caused it. On one machine an in-cache run (no memory traffic) passed 8 minutes on the same settings, so the error needed memory traffic."
+remediation = ["Separate the causes: run y-cruncher in-cache tests (SFTv4, SNT, SVT) and the memory tests (VT3, FFTv4, N63) on the same settings. Errors only with memory traffic point at RAM or the IMC."]
+tuning = "Change CPU ratios separately from memory settings, and validate CPU changes with in-cache tests first."
+sources = ["own measurement: reference machine (raptor-lake-field-notes) control B, 13 Nov (in-cache pass vs FFTv4 mismatch)", "https://pakt.cc/en/ddr5/ (section 7: SVT vs VT3)"]
+
+[[quirk]]
+id = "intel-acdc-ll-fixed-mode"
+title = "AC/DC load-line do not change delivered voltage in fixed mode"
+category = "cpu"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel"] }
+detect = [{ fact = "bios.vcore_fixed", op = "true" }]
+symptom = "Changing AC or DC load-line changes reported VID and package power but not stability or temperature."
+cause = "With a fixed (override) voltage the VRM targets the BIOS value; AC LL only moves the VID the CPU computes and DC LL only the power calculation. Higher AC LL can still trip VID-based limits (an inference)."
+remediation = [
+  "For believable package power, tune DC LL until reported VID matches HWiNFO VR VOUT under your load. Each 0.1 mOhm moves VID about 30 mV at 300 A.",
+  "Keep AC LL low in fixed mode; watch Performance Limit Reasons and effective clock for silent clock stretching.",
+]
+tuning = "Do not sweep AC/DC LL for stability in fixed mode; it is a reporting knob there."
+sources = [
+  "https://www.reddit.com/r/intel/comments/bz7vdo/max_152v_vid_auto_voltages_ac_and_dc_loadlines/",
+  "https://www.overclock.net/threads/hwinfo-z690-and-asus-which-sensors-to-use-for-voltage.1795390/",
+]
+
+[[quirk]]
+id = "intel-uvp-xtu"
+title = "Undervolt Protection and VBS can block OS-side voltage tools"
+category = "cpu"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.family" = ["raptor-lake"] }
+detect = [{ fact = "win.vbs_running", op = "true" }]
+symptom = "XTU, ThrottleStop or mailbox offsets are refused or have no effect."
+cause = "Intel Undervolt Protection (re-enabled by some BIOS updates) blocks runtime undervolting from the OS, and XTU does not run with Virtualization Based Security / HVCI on. Users on 0x12F reported offsets having no effect until UVP was disabled."
+remediation = [
+  "Set voltages in the BIOS (or with the board vendor's tool if it writes the VRM, as ASRock A-Tuning does).",
+  "If you use OS-side offsets: check UVP in the BIOS, and verify with VR VOUT that the offset really applied.",
+]
+tuning = "Never assume an OS-side voltage change applied; read it back."
+sources = ["https://community.intel.com/t/intel-core-13th-and-14th-gen-vmin-shift-instabilty-update-new-microcode-update-0x12f/132113"]
+
+[[quirk]]
+id = "cpu-short-tests-overstate-floor"
+title = "10-minute tests overstate the voltage floor under heat soak"
+category = "testing"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel"] }
+symptom = "A voltage that passes a 10-minute run fails at 15 to 30 minutes when the loop is warm."
+cause = "Measured on one machine at 57x with about 530 W of GPU heat in a shared loop: 10-minute runs passed 1.310 V, 30-minute runs failed at 1.320 and 1.330 V and passed only at 1.340 V. Short runs overstated the floor by about 30 mV."
+remediation = ["Find the floor with short runs, then validate with at least 3 x 30 minutes, starting each run warm, with your real heat load (GPU heat if you share a loop)."]
+tuning = "Use short runs to find candidates and long hot runs to accept them."
+sources = ["own measurement: reference machine (raptor-lake-field-notes) CPU sweep, 12 Nov (cpu/results.md in raptor-lake-field-notes)"]

@@ -1,0 +1,221 @@
+// Script File Name : export.txt
+// Created on 01/01/26 at 00:00:00
+// AMISCE Utility. Ver 5.05.01.0002
+HIICrc32= 0000BEEF
+
+Setup Question	=  {a1#CAS# Latency (tCL) {p200# [1;37;m40 [;;m
+Help String	= Synthetic help.
+Token	=2CA5	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	=  {a1#RAS# to CAS# Delay (tRCD) {p200# [1;37;m50 [;;m
+Help String	= Synthetic help.
+Token	=2CA7	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	=  {a1#Row Precharge (tRP) {p200# [1;37;m50 [;;m
+Help String	= Synthetic help.
+Token	=2CA8	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	=  {a1#RAS# Active Time (tRAS) {p200# [1;37;m96 [;;m
+Help String	= Synthetic help.
+Token	=2CA9	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	=  {a1#Write Recovery Time (tWR) {p200# [1;37;m24 [;;m
+Help String	= Synthetic help.
+Token	=2CAB	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	=  {a1#Read to Precharge (tRTP) {p200# [1;37;m23 [;;m
+Help String	= Synthetic help.
+Token	=2CB3	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	=  {a1#Refresh Cycle Time (tRFC) {p200# [1;37;m680 [;;m
+Help String	= Synthetic help.
+Token	=2CAC	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	=  {a1#Refresh Cycle Time 2 (tRFC2) {p200# [1;37;m680 [;;m
+Help String	= Synthetic help.
+Token	=2CAE	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	=  {a1#tREFI {p200# [1;37;m32767 [;;m
+Help String	= Synthetic help.
+Token	=2CB6	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	=  {a1#tRDRD_sg
+Help String	= Synthetic help.
+Token	=2C10	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	=  {a1#tRDRD_sg {p200# [1;37;m16 [;;m
+Help String	= Synthetic help.
+Token	=2CC9	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	=  {a1# {f3#VDD_IMC Voltage {p200# [1;37;m1.450V [;;m
+Help String	= Synthetic help.
+Token	=2CDB	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	=  {a1# {f3# {w1401#VDD_CPU Voltage {p200# [1;37;m1.450V [;;m
+Help String	= Synthetic help.
+Token	=2CFD	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<0>
+
+Setup Question	= Load XMP Setting
+Help String	= Synthetic.
+Token	=2C9F	// Do NOT change this line
+Offset	=20
+Width	=01
+BIOS Default	=[00]Auto 
+Options	=[00]Auto	// Move "*" to the desired Option
+         *[01]XMP 3.0 Profile 1
+         [02]XMP 3.0 Profile 2
+
+Setup Question	= CPU CORE/Cache Voltage
+Help String	= Synthetic.
+Token	=2CEE	// Do NOT change this line
+Offset	=20
+Width	=01
+BIOS Default	=[00]Auto 
+Options	=[00]Auto	// Move "*" to the desired Option
+         [01]Offset Mode
+         *[02]Fixed Mode
+
+Setup Question	=  {a1# {f3# {w1601#  Fixed Voltage(V)
+Help String	= Synthetic help.
+Token	=2CEF	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<1340>
+
+Setup Question	= CPU Core/Cache Load-Line Calibration {p200# [1;37;mLevel 1 [;;m
+Help String	= Synthetic.
+Token	=71	// Do NOT change this line
+Offset	=20
+Width	=01
+BIOS Default	=[00]Auto 
+Options	=[00]Auto	// Move "*" to the desired Option
+         *[01]Level 1
+         [02]Level 2
+
+Setup Question	= MRC Fast Boot
+Help String	= Synthetic.
+Token	=70	// Do NOT change this line
+Offset	=20
+Width	=01
+BIOS Default	=[00]Auto 
+Options	=*[00]Auto	// Move "*" to the desired Option
+         [01]Disabled
+         [02]Enabled
+
+Setup Question	= Boot Failure Guard Message
+Help String	= Synthetic.
+Token	=D2	// Do NOT change this line
+Offset	=20
+Width	=01
+BIOS Default	=[00]Disabled 
+Options	=[00]Disabled	// Move "*" to the desired Option
+         *[01]Enabled
+
+Setup Question	= Boot Failure Guard Count
+Help String	= Synthetic help.
+Token	=D3	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<4>
+
+Setup Question	= ASRock Timing Optimization
+Help String	= Synthetic.
+Token	=6A	// Do NOT change this line
+Offset	=20
+Width	=01
+BIOS Default	=[00]Disabled 
+Options	=[00]Disabled	// Move "*" to the desired Option
+         *[01]Enabled
+
+Setup Question	= DRAM Gear Mode
+Help String	= Synthetic.
+Token	=2B	// Do NOT change this line
+Offset	=20
+Width	=01
+BIOS Default	=[00]Auto 
+Options	=*[00]Auto	// Move "*" to the desired Option
+         [01]Gear2
+         [02]Gear4
+
+Setup Question	= AC Loadline
+Help String	= Synthetic help.
+Token	=353	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<50>
+
+Setup Question	= DC Loadline
+Help String	= Synthetic help.
+Token	=354	// Do NOT change this line
+Offset	=10
+Width	=02
+BIOS Default	=<0> 
+Value	=<50>
+
+// Setup Question	= Boot Failure Guard Message
+// Token	=1370	// Do NOT change this line
+// Value	=<0>
+
+Setup Question	= Reset NVRAM
+Token	=01	// Do NOT change this line
+Value	=1	// Enabled = 1, Disabled = 0
+
+Setup Question	= Some Password
+Token	=CA	// Do NOT change this line
+Value	=""
+

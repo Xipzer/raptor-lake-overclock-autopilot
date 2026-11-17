@@ -1,0 +1,51 @@
+# Configuration for the campaign scripts (campaign/*.py). Copy to campaign/campaign.toml, or point the
+# RLAP_CAMPAIGN_CONFIG environment variable at your copy. The scripts run in WSL; Windows folders are given as
+# /mnt/c/... paths, and a few as Windows paths where a Windows program needs them.
+# Keep your copy out of git (.gitignore lists campaign/campaign.toml).
+
+[paths]
+state_dir = "~/rlap-campaign"                 # state files, journal, logs (WSL side)
+journal_copies = []                           # more files that get every journal line (for example a synced folder)
+scewin_stage = "/mnt/c/Tools/scewin/stage"    # exchange folder of tools/windows/scewin-agent.ps1
+helper_dir = "/mnt/c/Tools/rlap-helper"       # exchange folder of tools/windows/helper-agent.ps1 (cmd.txt / ack.txt)
+failsafe_dir = "/mnt/c/Tools/rlap-failsafe"   # the -Dir of tools/failsafe.ps1
+windows_dir = "/mnt/c/Windows"
+
+[tools]
+ycruncher = "/mnt/c/Tools/memtest/y-cruncher/y-cruncher.exe"
+memlat = "/mnt/c/Tools/memtest/memlat.exe"            # tools/memlat.c
+memhold = "/mnt/c/Tools/memtest/memhold.exe"          # tools/memhold.c
+memhold_log_windows = 'C:\Tools\memtest\memhold.log'  # the same log as a Windows path (memhold is a Windows program)
+memhold_log = "/mnt/c/Tools/memtest/memhold.log"
+tm5_dir = "/mnt/c/Tools/memtest/TM5"                   # TestMem5 0.13.1 with TM5.ini set up by you
+cinebench = "/mnt/c/Tools/Cinebench2026/Cinebench.exe"
+shakedown_dir = "/mnt/c/Tools/shakedown"               # overclock-autopilot core (shakedown.exe, shakedown-cli.exe)
+shakedown_dir_windows = 'C:\Tools\shakedown'
+bench_temp_windows = 'C:\Windows\Temp'                 # where y-cruncher bench may write its output
+
+[tasks]
+# Scheduled task names created by tools/windows/install-tasks.ps1
+scewin_agent = "RlapScewinAgent"
+helper = "RlapHelper"
+
+[notify]
+# Shell commands. Each gets the text on stdin. Empty = off. Failures never stop a test or a reboot.
+mirror_command = ""       # every journal line (for example: ssh other-machine "cat >> tuning/journal.md")
+ping_command = ""         # important lines only (a failure, a pause, a finished phase)
+step_card_command = ""    # the step card, before every reboot into a risky step
+
+[reboot]
+# Before a scripted restart, close what holds the graphics card: three 0x9F shutdown hangs on the reference
+# machine came from a GPU process being torn down while Windows was already shutting down.
+stop_units = []           # systemd --user units to stop (for example a local model server)
+close_processes = []      # Windows image names to close (for example "wallpaper64.exe")
+
+[sensors]
+coolant_command = ""      # prints the coolant temperature in C; empty = no coolant gate before benchmarks
+
+[campaign]
+slow_boot_s = 120         # a boot gap above this means training needed retries (normal was about 45 s)
+ycruncher_args = ["stress", "-M:30G", "-D:60", "-TL:420", "FFTv4", "N63", "VT3"]
+
+[memtrack]
+block_processes = []      # Windows image names; while one runs, memory tests do not start (for example "chrome.exe")

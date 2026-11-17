@@ -1,0 +1,270 @@
+# Example: the reference machine's RAM sweep (plan v2, 13 Nov 2026), rebuilt for this harness.
+# i9-14900KS (SP 101), ASRock Z790I Lightning WiFi (BIOS 10.01, microcode 0x12F), Kingston FURY Renegade
+# 2x24 GB DDR5-8400 CL40 CUDIMM (SK hynix 24 Gb M-die), Gear 2. CPU fixed 57x / 1.340 V, LLC Level 1.
+# Our actual results are in the comments. They are OURS: do not copy the values, copy the method.
+#
+# Dry run, no hardware:   python tuner.py simulate -c examples/reference-14900ks-z790i-lightning.toml --owner
+# Check the plan:         python tuner.py check -c examples/reference-14900ks-z790i-lightning.toml
+
+[platform]
+name = "reference"
+cpu = "i9-14900KS"
+board_vendor = "ASRock"
+board_model = "Z790I Lightning WiFi"
+memory = "2x24 GB DDR5-8400 (SK hynix 24 Gb M-die)"
+gear = 2
+# If this question stops showing this value after a boot, the BIOS loaded defaults (Boot Failure Guard).
+profile_question = "Load XMP Setting"
+profile_value = "XMP 3.0 Profile 1"
+normal_boot_s = 45      # our trained boots took about 45 s
+slow_boot_s = 120       # failed trainings took 135 to 282 s
+no_post_gap_s = 900     # longer than this suggests someone power-cycled it: you will be asked to `mark no-post`
+
+[backend]
+type = "scewin"         # "manual" prints the values for you to enter; "sim" is for dry runs
+vendor = "asrock"       # the only vendor plugin implemented today; see `python tuner.py vendors`
+scewin = 'C:\Tools\scewin\SCEWIN_64.exe'
+# ASRock blocks SCEWIN imports (runtime variable protection) unless a BIOS Administrator password is set and
+# passed with /cpwd. Keep it in a file only administrators can read, or set the RLAP_BIOS_PASSWORD environment
+# variable instead (the startup failsafe runs as SYSTEM and can only use the file).
+password_file = 'C:\Tools\scewin\bios-admin-password.txt'
+restore_golden_drift = true   # copy pre-sweep values back if anything else drifted (also undoes loaded defaults)
+
+[paths]
+state_dir = 'C:\ProgramData\RaptorLakeAutopilot\reference'
+
+[journal]
+# Each journal line is piped to this command (optional). We mirrored to a second machine over ssh.
+# mirror_command = 'ssh -o BatchMode=yes -o ConnectTimeout=5 user@second-machine "cat >> tuning/journal.md"'
+# notify_command = 'C:\Tools\notify.exe'   # receives important lines on stdin
+
+[limits]
+# Defaults: Vcore 1.40 V, TX 1.35 V, VDD2 1.45 V, SA 1.30 V (20 mV steps), DIMM 1.50 V, DIMM abort 60 C,
+# core abort 100 C, temperature gate 45 C, 2 runs per step, control every 3 kept steps.
+
+[limits.vddq_tx_mv]
+# The board's Auto put TX at 1.45 V (it follows the XMP DRAM voltage). Our first step down was 1.40 V.
+value = 1400
+i_accept_the_risk = true
+reason = "stepping DOWN from the board's auto 1.45 V; the kept value is 1.35 V"
+
+[limits.core_temp_abort_c]
+value = 108
+i_accept_the_risk = true
+reason = "our validated CPU profile runs P7 at 103-106 C under Cinebench plus GPU heat; 108 is the LLC research abort"
+
+[limits.temp_gate_c]
+# With a 120 mm fan on the DIMMs they peaked at 52-58 C. tREFI 40960 and 49152 passed there; 65535 is
+# deferred until the water block. Above the default 45 C gate on purpose.
+value = 58
+i_accept_the_risk = true
+reason = "DIMM fan only; tREFI capped at 49152 in the plan; tCL 38 left out (failed warm)"
+
+[sweep]
+tests = ["memlat", "ycruncher", "whea"]
+cpu_tests = ["cinebench"]
+startup_delay_s = 45
+# Read after every boot. If any of these change without the step touching them, training fell back: NO TRAIN.
+watch = ["tRFC", "tRFC2", "tCL", "tRCD", "tRP", "tWR", "tRAS", "tRTP"]
+fallback_signature = { tRFC = "395" }   # this board falls back to tRFC 395, tCL/tRCD/tRP 29, tWR 54
+linked = [["tRFC", "tRFC2"], ["tRCD", "tRP"]]
+temp_gated = ["tREFI", "tCL"]
+# twr_min = 24        # optional floor of your own for tWR. On this board tWR set alone leaves tRTP unchanged.
+max_backoff = 2
+# The kept set from plan v1 (control C passed twice): already in the BIOS when plan v2 started.
+# tRTP 23 is the value the BIOS reads back (XMP; tWR 24 set alone did not move it). The tRAS >= tRCD + tRTP rule
+# uses the read-back tRTP once the harness has one.
+baseline = { tCL = 40, tRCD = 50, tRP = 50, tRAS = 96, tWR = 24, tRTP = 23, tRFC = 680, tRFC2 = 680, tREFI = 32767, tCWL = 40, tRFCpb = 796, tWRRD_dg = 62, tWRRD_sg = 94 }
+
+# Settings: logical name -> BIOS question NAME (tokens differ between BIOS versions). Value 0 = Auto on ASRock.
+# Find names with: python tuner.py names export.txt --grep tRFC
+[settings.tCL]
+question = "CAS# Latency (tCL)"
+[settings.tRCD]
+question = "RAS# to CAS# Delay (tRCD)"
+[settings.tRP]
+question = "Row Precharge (tRP)"
+[settings.tRAS]
+question = "RAS# Active Time (tRAS)"
+[settings.tCWL]
+question = "CAS Write Latency (tCWL)"
+[settings.tWR]
+question = "Write Recovery Time (tWR)"
+[settings.tRTP]
+question = "Read to Precharge (tRTP)"   # its own setting on this board: tWR set alone does not move it
+[settings.tRFC]
+question = "Refresh Cycle Time (tRFC)"
+[settings.tRFC2]
+question = "Refresh Cycle Time 2 (tRFC2)"
+[settings.tRFCpb]
+question = "Refresh Cycle Time per Bank (tRFCpb)"
+[settings.tREFI]
+question = "tREFI"
+[settings.tWRRD_dg]
+question = "tWRRD_dg"
+index = 1             # the name appears twice; the second block carries the live value
+[settings.tWRRD_sg]
+question = "tWRRD_sg"
+index = 1
+[settings.tRDWR_dg]
+question = "tRDWR_dg"
+index = 1
+[settings.tRDWR_sg]
+question = "tRDWR_sg"
+index = 1
+[settings.TX]
+question = "VDD_IMC Voltage"   # = VDDQ_TX on ASRock
+kind = "mv"
+limit = "vddq_tx_mv"
+[settings.VDD2]
+question = "VDD_CPU Voltage"   # = VDD2 on ASRock
+kind = "mv"
+limit = "vdd2_mv"
+[settings.ring]
+question = "CPU Cache Ratio"
+kind = "ratio"
+[settings.ecore]
+question = "All Core"
+index = 1             # the first "All Core" is the P-core ratio
+kind = "ratio"
+
+[tests.memlat]
+type = "memlat"
+command = 'C:\Tools\memtest\memlat.exe'
+large_pages = false   # true for numbers closer to AIDA (needs the Lock pages in memory right); still NOT AIDA
+timeout_s = 300
+watch = false
+
+[tests.ycruncher]
+type = "ycruncher"
+command = 'C:\Tools\memtest\y-cruncher\y-cruncher.exe'
+cwd = 'C:\Tools\memtest\y-cruncher'
+args = ["stress", "-M:30G", "-D:60", "-TL:420", "FFTv4", "N63", "VT3"]
+min_passed = 3
+timeout_s = 900
+
+[tests.whea]
+type = "whea"
+
+[tests.cinebench]
+# Shakedown CLI: 10 minutes of Cinebench 2026. We also ran Shakedown's GPU heat alongside (shakedown.exe --heat).
+type = "shakedown"
+command = 'C:\Tools\shakedown\shakedown-cli.exe'
+cwd = 'C:\Tools\shakedown'
+minutes = 10
+timeout_s = 1500
+
+[temps.dimm]
+command = 'C:\Tools\memtest\dimmtemp.exe'
+# The SPD hub sensors read 0 after a cold boot until HWiNFO has started once:
+init_command = 'C:\Tools\scripts\init-dimm-sensors.cmd'
+init_wait_s = 40
+
+[doctor.facts]
+# Things no probe can see. The doctor uses them for the cooling entries.
+"cooling.cpu_after_gpu" = true
+"cooling.sensor_upstream_of_cpu" = true
+"cooling.liquid_metal" = true
+
+# Groups run in order. A group stops at its first failure ("descend"); an "alt" group tries alternatives until
+# one passes. Two passing runs (y-cruncher 7 min each) per step.
+
+[[group]]
+name = "TX (VDD_IMC)"
+setting = "TX"
+values = [1400, 1350, 1300]
+# Ours: 1400 PASS, 1350 PASS, 1300 PASS (kept 1.30 V). After the tRDRD_sg 14 no-POST we raised TX back to
+# 1.35 V for training margin (research: no-POST loops point at VDD2, TX and SA first).
+
+[[group]]
+name = "VDD2 (VDD_CPU)"
+setting = "VDD2"
+values = [1420, 1400]
+# Ours: 1420 FAIL (y-cruncher ConvolutionFailedException in the first section). VDD2 stays 1.45 V.
+
+[[group]]
+name = "tWRRD_dg"
+setting = "tWRRD_dg"
+values = [56, 52, 48]
+# Ours: 56 PASS, 52 PASS, 48 PASS (kept 48). tWTR is set through tWRRD on Intel.
+
+[[group]]
+name = "tWRRD_sg"
+setting = "tWRRD_sg"
+values = [80, 70, 64]
+# Ours: 80 PASS, 70 PASS, 64 NO TRAIN (fallback: tRFC 395, boot 153 s). Kept 70.
+
+[[group]]
+name = "tRDWR_dg"
+setting = "tRDWR_dg"
+values = [20, 19]
+# Ours: 20 PASS, 19 PASS.
+
+[[group]]
+name = "tRDWR_sg"
+setting = "tRDWR_sg"
+values = [20, 19]
+# Ours: 20 PASS, 19 PASS.
+
+# Not in this plan (the harness refuses it by default, limit sg_turnarounds_trained):
+#   tRDRD_sg 15 PASS, then 14 = NO POST: no picture, 5 manual power cycles, then Boot Failure Guard trained
+#   the memory at DDR5-3600 fail-safe with every setting still in NVRAM. We went back to trained (16).
+
+[[group]]
+name = "tRFCpb"
+setting = "tRFCpb"
+values = [560, 460]
+# Ours: 560 PASS, 460 PASS. (420 skipped: below every published ratio.)
+
+[[group]]
+name = "tRAS"
+setting = "tRAS"
+values = [84, 76]
+# Ours: 84 PASS, 76 PASS. Floor = tRCD + read-back tRTP = 50 + 23 = 73 (64 was below it).
+
+[[group]]
+name = "tCWL"
+setting = "tCWL"
+values = [38]
+# Ours: 38 PASS (native CL-2 at tCL 40).
+
+[[group]]
+name = "tREFI"
+setting = "tREFI"
+values = [40960, 49152]
+# Ours: 40960 PASS, 49152 PASS (DIMM peak 52-58 C with a fan). 65535 waits for the water block (failed late
+# earlier, on a base later shown to be marginal).
+
+[[group]]
+name = "ring"
+setting = "ring"
+values = [51]
+cpu = true
+risky = true
+note = "only CPU step that lowers memory latency; ring 52 skipped (likely fail). Adds Cinebench + GPU heat."
+# Ours: 51 was under test when this example was written.
+
+[[group]]
+name = "E-cores"
+setting = "ecore"
+values = [46]
+cpu = true
+risky = true
+note = "multithread gain only, no memory effect; 47 skipped"
+
+# Plan v1 for comparison (12 Nov, XMP base, one run per step; the reason plan v2 exists):
+#   tRFC/tRFC2 820, 740, 680 PASS; 630 NO TRAIN (tRFC 395, boot 282 s)
+#   tWR 40, 36, 30, 24 PASS (tWR 40 + tRTP 20 in one step came back as tRTP 19 = NOT APPLIED; tWR alone leaves tRTP at 23)
+#   tRRD_L 10 CRASH (BSOD 0x80 NMI at boot, screen frozen about 1 h, owner pressed reset)
+#   tWTR_L/S 36/12 NOT APPLIED (BIOS raised them to 42/18)
+#   tRCD/tRP 50 PASS; 48 CRASH (startup crashes into Windows Recovery)
+#   tCL 38 PASS once; 36 NO TRAIN (the failsafe restored it unattended)
+#   tRAS 96, 76 PASS; 64 FAIL. tREFI 65535 FAIL. tRFC 670 FAIL.
+#   Three late FAILs in a row -> control of the kept set: A FAIL, B (tRAS 96) FAIL, C (tCL 40) PASS twice.
+#   So tCL 38 was marginal and the three FAILs were unproven. Hence: two runs per step, and controls.
+
+[simulate]
+# What `tuner.py simulate` replays: our real outcomes for this plan. Everything else passes.
+outcomes = { "VDD2=1420" = "FAIL", "tWRRD_sg=64" = "NO TRAIN" }
+dimm_peak_c = 55
+trained = { tCL = 40, tRCD = 50, tRP = 50, tRAS = 96, tWR = 24, tRTP = 23, tRFC = 680, tRFC2 = 680, tRFCpb = 796, tREFI = 32767, tCWL = 40, TX = 1450, VDD2 = 1450, tWRRD_dg = 62, tWRRD_sg = 94, tRDWR_dg = 22, tRDWR_sg = 22, ring = 50, ecore = 45 }

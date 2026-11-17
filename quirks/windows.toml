@@ -1,0 +1,92 @@
+# Windows-side quirks that matter for tuning and unattended sweeps.
+
+[[quirk]]
+id = "win-vbs-tool-coverage"
+title = "VBS / HVCI is on: some tools are blocked and memory tester coverage can differ"
+category = "windows"
+severity = "NOTE"
+confidence = "thin"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+detect = [{ fact = "win.vbs_running", op = "true" }]
+symptom = "XTU will not run; some drivers or OC tools refuse to load; results differ from guides tested with VBS off."
+cause = "With VBS the hypervisor and secure kernel own memory that user-mode testers cannot lock, and Memory Integrity blocks unsigned or vulnerable drivers. We found no authoritative source on how much this changes TM5/Karhu coverage."
+remediation = ["Pick one VBS state and test in it: either your daily state, or off for testing plus a final pass in your daily state."]
+tuning = "Do not compare results across VBS states. SCEWIN export works with VBS and HVCI on (seen on one machine)."
+sources = ["https://www.overclock.net/threads/9800x3d-and-ddr5-8000-memory-oc.1816973/", "own measurement: reference machine (raptor-lake-field-notes) SCEWIN under VBS/HVCI, 12 Nov"]
+
+[[quirk]]
+id = "win-crashdump-hang"
+title = "Crash dumps are on: a bugcheck on unstable RAM can hang instead of rebooting"
+category = "windows"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+detect = [{ fact = "win.crashdump_enabled", op = "ne", value = 0 }]
+symptom = "During a sweep the PC freezes for minutes (or for good) on a blue screen."
+cause = "Writing a dump from unstable memory can stall. On one machine a step's bugcheck left the screen frozen for an hour."
+remediation = ["For unattended sweeps only: `tuner.py install crashdumps --yes` (dumps off, automatic restart on). `tuner.py restore --yes` puts them back."]
+tuning = "Normal daily use: keep dumps on; they are how you find out what crashed."
+sources = ["own measurement: reference machine (raptor-lake-field-notes) tRRD_L 10, 12 Nov 21:35 (BSOD 0x80, frozen about 1 h)"]
+
+[[quirk]]
+id = "win-winre-after-failed-boots"
+title = "Windows Recovery stops unattended sweeps after failed boots"
+category = "windows"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+detect = [{ fact = "win.bcd_recoveryenabled", op = "regex", value = "^yes$" }]
+symptom = "After two failed boots Windows opens Recovery and waits for a click."
+cause = "Default boot status policy. On one machine tRCD 48 crashed during startup and sat in Recovery until the owner clicked Restart."
+remediation = ["For unattended sweeps only: `tuner.py install bcdedit --yes` (recoveryenabled No, bootstatuspolicy IgnoreAllFailures). `tuner.py restore --yes` undoes it."]
+tuning = "Undo it after the sweep: Recovery is useful when Windows itself breaks."
+sources = ["own measurement: reference machine (raptor-lake-field-notes) tRCD/tRP 48, 12 Nov 23:05 to 23:33"]
+
+[[quirk]]
+id = "win-9f-shutdown-hang"
+title = "Bugcheck 0x9F at shutdown or reboot"
+category = "windows"
+severity = "INFO"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+detect = [{ fact = "win.bugcheck_codes", op = "contains", value = "0x9F" }]
+symptom = "A reboot takes 6 to 7 minutes and the log shows DRIVER_POWER_STATE_FAILURE."
+cause = "A driver held a power request. It is not a memory failure, but a slow boot after it can look like a training fallback."
+remediation = ["Find the driver from the dump (param 3) when dumps are on. During a sweep, do not classify a slow boot as NO TRAIN on boot time alone; the harness also requires changed values or the fallback signature."]
+tuning = "Expect occasional slow reboots; trust the effective values, not the clock."
+sources = ["own measurement: reference machine (raptor-lake-field-notes), 12 Nov 20:28 and 20:43", "https://learn.microsoft.com/windows-hardware/drivers/debugger/bug-check-0x9f--driver-power-state-failure"]
+
+[[quirk]]
+id = "win-recent-crashes"
+title = "Unclean shutdowns or bugchecks in the recent event log"
+category = "windows"
+severity = "WARN"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+detect = [{ fact = "win.unclean_shutdowns", op = "ge", value = 1 }]
+symptom = "Kernel-Power 41 or EventLog 6008 events: the PC restarted without shutting down cleanly."
+cause = "A crash, hang, power loss or reset. After memory instability, files can be silently corrupted."
+remediation = [
+  "Run `chkdsk /scan C:` (online, read only) and `sfc /scannow` before more tuning.",
+  "Check WSL or other file systems if you use them.",
+  "Make sure the BIOS is not on defaults before the next step.",
+]
+tuning = "A sweep's crash check counts these since each step was set, so old events do not blame new steps."
+sources = ["https://github.com/integralfx/MemTestHelper/blob/oc-guide/DDR4%20OC%20Guide.md (run sfc after instability)"]
+
+[[quirk]]
+id = "win-whea-history"
+title = "WHEA hardware errors in the event log"
+category = "cpu"
+severity = "WARN"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+detect = [{ fact = "whea.total", op = "ge", value = 1 }]
+symptom = "Corrected machine-check errors (WHEA-Logger, usually event 19) were logged."
+cause = "WHEA records on this platform point at the CPU side: cores, ring, cache or the memory controller. The APIC ID in each record names the logical CPU; MciStat low bits give the kind (0005 internal parity, 001x TLB, 01xx cache)."
+remediation = [
+  "See whea.by_apic in the facts: the APIC IDs with the most errors are your weakest cores (Shakedown names them for you).",
+  "Fix CPU-side errors (ratio, voltage, temperature) before memory tuning, or memory results will be noise.",
+]
+tuning = "Every harness step counts new WHEA records; any is a FAIL."
+sources = ["https://www.overclock.net/threads/about-whea-event-19-warnings.1536052/"]

@@ -1,0 +1,160 @@
+# DDR5 quirks (Intel memory controller unless stated).
+
+[[quirk]]
+id = "ddr5-ondie-ecc-invisible"
+title = "DDR5 on-die ECC errors never reach WHEA"
+category = "memory"
+severity = "LIMIT"
+confidence = "source"
+platform = { "mem.type" = ["DDR5"] }
+symptom = "Memory tests fail while the WHEA log stays clean. Every RAM failure in our sweep had WHEA 0."
+cause = "DDR5 chips correct single-bit errors inside the chip and say nothing. On a non-ECC desktop, DRAM-side errors show only as test failures, crashes or corrupted files."
+remediation = []
+tuning = "A clean WHEA log proves nothing about the DIMMs. Use real memory tests (y-cruncher VT3/FFTv4, TM5, Karhu) as the pass criterion; WHEA on this platform points at cores, ring or the memory controller."
+sources = ["https://www.atpinc.com/tw/blog/ddr5-what-is-on-die-ecc-how-is-it-different-to-traditional-ecc"]
+
+[[quirk]]
+id = "hynix-24gb-mdie-heat"
+title = "24 Gb (non-binary) DDR5 dies are heat sensitive: tREFI and tCL need cool DIMMs"
+category = "memory"
+severity = "WARN"
+confidence = "source"
+platform = { "mem.type" = ["DDR5"], "mem.nonbinary" = true }
+detect = [{ fact = "dimm.peak_c", op = "ge", value = 45 }, { fact = "dimm.now_c", op = "ge", value = 45 }]
+detect_mode = "any"
+symptom = "Errors that appear after several minutes, as the DIMMs warm up; tREFI 65535 fails while 32767 passes; tCL 38 passes once and then fails."
+cause = "Owners report 24 Gb Hynix M-die errors from about 45 to 49 C at high tREFI; 'keep them below 49 C at full load'. Refresh margin falls with temperature. 24 GB and 48 GB modules use 24 Gb dies (often Hynix M-die)."
+remediation = [
+  "Cool the DIMMs: a fan aimed at them (a 120 mm fan took ours from 60-66 C to 45-56 C) or a water block.",
+  "Log DIMM temperature on every test and note the temperature at the first error.",
+]
+tuning = "Raise tREFI and lower tCL only when the DIMMs stay below about 45 C under your heaviest load; keep tREFI at 32767 or less above that. Do not combine more VDD (heat) with a higher tREFI."
+implications = [{ action = "gate", settings = ["tREFI", "tCL"], below_c = 45 }]
+sources = [
+  "https://www.overclock.net/threads/ddr5-most-temperature-sensitive-timings.1808660/",
+  "https://www.reddit.com/r/overclocking/comments/1odgz3l/investigating_ddr5_trefi_scaling_with_high/",
+  "https://www.overclock.net/threads/asrock-z790-nova-wifi-z790i-lightning-wifi-thread.1808124/page-6",
+  "https://pakt.cc/en/ddr5/timings/",
+]
+
+[[quirk]]
+id = "trefi-temperature-general"
+title = "tREFI is the most temperature-sensitive timing on any DDR5"
+category = "memory"
+severity = "NOTE"
+confidence = "source"
+platform = { "mem.type" = ["DDR5"] }
+symptom = "A high tREFI passes a cool test and corrupts data on a warm day."
+cause = "Longer intervals between refreshes leave cells more time to leak, and leakage grows with temperature. 'A can do 65k when not over 45-50 C, 32767 is good until 70 C' (owner report)."
+remediation = ["Test tREFI last, at your worst daily DIMM temperature (summer, GPU loaded), with a run long enough to reach the temperature plateau."]
+tuning = "Raise tREFI only after tRFC is final; the gain above about 49152 is well under 1% of memory time."
+sources = ["https://www.overclock.net/threads/ddr5-most-temperature-sensitive-timings.1808660/", "https://www.patreon.com/buildzoid/posts/low-effort-rank-77403831"]
+
+[[quirk]]
+id = "cudimm-bypass-z790"
+title = "CUDIMMs run in clock-driver bypass on Z790"
+category = "memory"
+severity = "INFO"
+confidence = "source"
+platform = { "mem.type" = ["DDR5"], "board.model" = "Z790|B760|H770" }
+detect = [{ fact = "mem.cudimm", op = "true" }]
+symptom = "Your kit is a CUDIMM (it has a clock driver) but behaves like a normal UDIMM."
+cause = "Raptor Lake platforms run CUDIMMs with the clock driver bypassed, with the same signal integrity as standard DDR5 in that mode. Kingston FURY Renegade 8400 parts (KF584CU...) are CUDIMMs."
+remediation = ["Nothing to change. Use UDIMM tuning guides; do not expect CUDIMM frequency headroom on this platform."]
+tuning = "Judge the kit by its dies (24 Gb Hynix M-die on the Kingston 8400), not by the CUDIMM label."
+sources = ["https://www.reddit.com/r/overclocking/comments/1iuesjm/z790_cudimm_question/", "https://www.techpowerup.com/review/kingston-fury-renegade-cudimm-ddr5-8400-48gb-cl40/3.html"]
+
+[[quirk]]
+id = "pmic-jedec-lock"
+title = "DIMM voltage stuck at 1.435 V: a JEDEC-locked PMIC or the wrong voltage range"
+category = "memory"
+severity = "NOTE"
+confidence = "inference"
+platform = { "mem.type" = ["DDR5"] }
+detect = [{ fact = "mem.configured_mv", op = "in", value = [1430, 1435] }]
+symptom = "DIMM VDD/VDDQ cannot go above 1.435 V, or a higher setting is ignored."
+cause = "JEDEC PMICs cap VDD at 1.435 V. ASRock: 'OC Demand may not be applied if PMIC OC CAP is JEDEC PMIC'. Boards also need VDD/VDDQ Voltage Range = OC Demand to go higher."
+remediation = ["Check VDD/VDDQ Voltage Range (OC Demand) and read the PMIC ADC in HWiNFO under load. If the PMIC is locked, 1.435 V is your ceiling."]
+tuning = "If locked, drop any step that needs more DIMM voltage."
+sources = ["https://download.asrock.com/Manual/Software/Intel%20Z790/Software_BIOS%20Setup%20Guide_English.pdf", "https://www.overclock.net/threads/asrock-z790-nova-wifi-z790i-lightning-wifi-thread.1808124/page-24 (post 475)"]
+
+[[quirk]]
+id = "dimm-sensor-zero-after-cold-boot"
+title = "DIMM temperature sensors read 0 after a cold boot"
+category = "tooling"
+severity = "NOTE"
+confidence = "source"
+platform = { "mem.type" = ["DDR5"] }
+detect = [{ fact = "dimm.all_zero", op = "true" }]
+symptom = "Your DIMM temperature logger shows 0 C."
+cause = "The SPD hub thermal sensors stay at 0 until a tool initialises them (HWiNFO does). 0 C is not a cold DIMM."
+remediation = ["Give the harness DIMM reader an init_command (for example start HWiNFO briefly), or start HWiNFO once after boot before reading."]
+tuning = "Steps gated on DIMM temperature are skipped while there is no reading (harness limit temp_gate_requires_reading)."
+sources = ["own measurement: reference machine (raptor-lake-field-notes), 12 Nov 19:57 (ram/quirks.md)"]
+
+[[quirk]]
+id = "sg-turnarounds-tccdl"
+title = "tRDRD_sg / tWRWR_sg track tCCD_L: too low can hang training with no POST"
+category = "timings"
+severity = "WARN"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel"], "mem.type" = ["DDR5"] }
+symptom = "A small cut (tRDRD_sg 15 -> 14) gives a black screen with no POST that needs manual power cycles."
+cause = "The _sg turnarounds sit on tCCD_L (about 5 ns, about 21 clocks at 8400 in one guide's notes); _sg timings give little performance compared with _dg and are heat sensitive on M-die."
+remediation = ["Leave tRDRD_sg and tWRWR_sg trained. If you must try, one clock per step, with the owner present and the Clear CMOS jumper known."]
+tuning = "The harness refuses tRDRD_sg/tWRWR_sg steps unless sg_turnarounds_trained is overridden with i_accept_the_risk."
+implications = [{ action = "skip", settings = ["tRDRD_sg", "tWRWR_sg"], reason = "no-POST risk, little gain; leave trained" }]
+sources = ["own measurement: reference machine (raptor-lake-field-notes) tRDRD_sg 14 no-POST, 13 Nov 07:12", "https://pakt.cc/en/ddr5/timings/", "https://www.overclock.net/threads/official-intel-ddr5-oc-and-24-7-daily-memory-stability-thread.1794772/page-1730"]
+
+[[quirk]]
+id = "gear2-even-tcl"
+title = "tCL must be even in Gear 2"
+category = "timings"
+severity = "INFO"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel"], "mem.type" = ["DDR5"] }
+detect = [{ fact = "bios.gear", op = "not_regex", value = "4" }]
+symptom = "An odd tCL is not applied or does not POST."
+cause = "tCL must be a multiple of the gear ratio (Arni90). Raptor Lake runs DDR5 in Gear 2 (Auto) or Gear 4."
+remediation = ["Step tCL by 2 in Gear 2 (by 4 in Gear 4)."]
+tuning = "The harness rejects odd tCL when platform.gear = 2."
+sources = ["https://www.overclock.net/threads/official-intel-ddr5-oc-and-24-7-daily-memory-stability-thread.1794772/ (post 1)"]
+
+[[quirk]]
+id = "tras-floor"
+title = "tRAS below tRCD + tRTP gains nothing"
+category = "timings"
+severity = "INFO"
+confidence = "source"
+platform = { "mem.type" = ["DDR5"] }
+symptom = "A tRAS step below the floor passes or fails without any performance change."
+cause = "Precharge must wait for both tRAS from ACT and tRTP from READ; Intel's hidden tRC = tRAS + tRP."
+remediation = ["Keep tRAS >= tRCD + tRTP. Use the tRTP the BIOS reads back after boot, not an estimate."]
+tuning = "The harness checks this rule with the read-back tRCD and tRTP (the baseline in the config is used only until the first readback). Our own first floor was wrong: we assumed tRTP 11 (floor 61); the read-back was 23 (floor 73), so tRAS 64 had been below the floor."
+sources = ["https://pakt.cc/en/ddr5/timings/", "https://github.com/integralfx/MemTestHelper/blob/oc-guide/DDR4%20OC%20Guide.md"]
+
+[[quirk]]
+id = "ddr5-retrain-validation"
+title = "Retrain-dependent instability needs cold-boot tests"
+category = "testing"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.family" = ["raptor-lake"], "mem.type" = ["DDR5"] }
+symptom = "A profile passes hours of tests and fails days later after a few cold boots."
+cause = "The Raptor Lake IMC can temporarily handle settings it cannot train consistently; failures show up after retrains."
+remediation = ["After the sweep: 3 to 5 cold boots (PSU off), each followed by 20 to 60 minutes of VT3."]
+tuning = "A sweep finds candidates; only retrain tests make a daily profile."
+sources = ["https://www.overclock.net/threads/asrock-z790-nova-wifi-z790i-lightning-wifi-thread.1808124/page-149 (post 2974)"]
+
+[[quirk]]
+id = "ddr5-test-both-kinds"
+title = "IMC tests and DRAM tests catch different things"
+category = "testing"
+severity = "INFO"
+confidence = "source"
+platform = { "mem.type" = ["DDR5"] }
+symptom = "Hours of one memory test pass, and another fails in minutes."
+cause = "'RAM and IMC stability are quite independent': y-cruncher (VT3, VST, FFTv4) loads the IMC and catches silent I/O errors; TM5 and Karhu stress DRAM patterns."
+remediation = ["Validate with both: y-cruncher VT3/FFTv4/N63, and TM5 (1usmus_v3 or anta777) or Karhu."]
+tuning = "Use y-cruncher per step (fast), TM5/Karhu for the final validation."
+sources = ["https://www.numberworld.org/y-cruncher/faq.html", "https://www.overclock.net/threads/official-intel-ddr5-oc-and-24-7-daily-memory-stability-thread.1794772/"]
