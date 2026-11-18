@@ -1,0 +1,72 @@
+# Stability-testing pitfalls. General knowledge for the platform: nothing to detect, the harness applies them.
+
+[[quirk]]
+id = "ycruncher-launcher-worker"
+title = "y-cruncher.exe is only a launcher; the work runs in a child binary"
+category = "testing"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+symptom = "An affinity mask on y-cruncher.exe has no effect; ending it can leave the worker running."
+cause = "The launcher starts a per-architecture worker from Binaries\\ (for example '14-BDW ~ Kurumi.exe'). Its own start-up also resets a mask set in the first instant."
+remediation = [
+  "Set affinity on the worker, about 20 s after start, and read per-core load back to confirm.",
+  "Stop the worker, not only the launcher. Do not match 'error' in its output: the banner says 'Stop on Error: Enabled'.",
+]
+tuning = "rlh/testsuite.py ignores the 'Stop on Error' banner when it looks for errors. Worker masking is in campaign/memtrack.py."
+sources = ["https://github.com/exidum79/Rynez-Stability-Monitor", "https://www.reddit.com/r/overclocking/comments/18frn4v/how_to_run_ycruncher_standalone_as_efficiently_as/", "own measurement: reference machine, 14 Nov"]
+
+[[quirk]]
+id = "tm5-coverage-and-wording"
+title = "TestMem5: low coverage when memory is not free, and a parser that misreads passes"
+category = "testing"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+symptom = "A TM5 run covers 40% of memory, or a clean 60-minute run is logged as FAIL."
+cause = "TM5 sizes itself at start; memory still held by a previous test (or WSL page cache) is excluded. 0.13.1 writes only 'Testing completed' on a clean pass."
+remediation = [
+  "Free memory first (wait after the previous test, drop WSL caches) and read the coverage line; expect about 75 to 82%.",
+  "Confine TM5 once at launch, never mid-run. Count 'An error N occurred in the program' as a FAIL.",
+]
+tuning = "The TM5 parser in rlh/testsuite.py accepts only the pass wording. Check coverage yourself; the harness does not yet."
+sources = ["https://github.com/CoolCmd/TestMem5", "own measurement: reference machine (raptor-lake-field-notes validation.md), 14 to 15 Nov"]
+
+[[quirk]]
+id = "cpu-heat-in-ram-test"
+title = "An all-thread memory test with a hot loop is a CPU test"
+category = "testing"
+severity = "WARN"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel"] }
+symptom = "A hard reset with no stop code during a RAM test."
+cause = "y-cruncher on all threads plus GPU heat drew 459 W and put a core at 107 C on the reference machine."
+remediation = ["No GPU heat during RAM tests; size the load up from a few threads while watching the hottest core; stop at 100 C."]
+tuning = "campaign/memtrack.py has the guard; it is planned for the harness."
+sources = ["own measurement: reference machine (raptor-lake-field-notes validation.md), 14 Nov 08:14"]
+
+[[quirk]]
+id = "short-single-runs-luck"
+title = "Single short passes near the edge are luck"
+category = "testing"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+symptom = "A configuration passes 10 minutes and fails 30; a voltage floor found with 10-minute runs is about 30 mV too low."
+cause = "Near the edge, errors are rare events. After n clean runs a failure rate up to 1 - 0.05^(1/n) is still possible at 95% (63% after 3 runs, 26% after 10)."
+remediation = ["Screen with 1 run, trust after 3, final pass 10 or more, and confirm voltage floors with 30-minute runs."]
+tuning = "Engine defaults: two passes to keep a value; long checkpoints after small batches."
+sources = ["https://en.wikipedia.org/wiki/Rule_of_three_(statistics)", "own measurement: reference machine (raptor-lake-field-notes validation.md), 12 and 15 Nov"]
+
+[[quirk]]
+id = "whea-window"
+title = "WHEA counts from short windows hide errors"
+category = "testing"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel"] }
+symptom = "'0 errors' reported from a few test windows while the log holds dozens for the month."
+cause = "Corrected errors come in bursts tied to what runs. A count is only meaningful over a stated period and mapped to test windows."
+remediation = ["Count WHEA 19 over the whole period, by APIC ID (P index = APIC / 8 on 14th gen), and map each record to a test window."]
+tuning = "The doctor reads the whole log; every step counts records since its own start."
+sources = ["https://www.overclock.net/threads/about-whea-event-19-warnings.1536052/", "own measurement: reference machine, 12 Nov (37 in 30 days, 116 in 120 days)"]

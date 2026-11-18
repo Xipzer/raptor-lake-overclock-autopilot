@@ -32,6 +32,38 @@ What came out of the campaign this tool is built from (results, failures and mis
 | Real-use temperature capture, full-page drift diff, report generator | Planned | See [docs/METHOD.md](docs/METHOD.md) |
 | AMD, DDR4, non-AMI firmware, GPU tuning | Out of scope | Use the core repo |
 
+## Quirks it knows about
+
+`tuner.py doctor` checks your PC against a knowledge base in `quirks/*.toml`: what each quirk looks like, the cause, the remedy, what it means for a sweep, and its sources.
+Every entry says whether a public source backs it or it comes from one machine.
+
+| File | Covers | Examples |
+|---|---|---|
+| `quirks/cpu.toml` | Raptor Lake CPU | microcode, Vmin shift, fixed Vcore at idle, SA freeze bug, short tests overstating floors |
+| `quirks/ddr5.toml` | DDR5 and the IMC | on-die ECC invisible to WHEA, 24 Gb M-die heat, tREFI and temperature, Gear 2 even tCL, tRAS floor |
+| `quirks/asrock.toml` | ASRock Z790 boards | Fixed Vcore at the VRM, socket-sense Vcore, LLC levels, rail names, tWTR via tWRRD, tRTP read-back, Boot Failure Guard, the tRFC 395 fallback |
+| `quirks/scewin.toml` | AMI SCEWIN | prompts embed the live value, partial writes, harmless TcgStorage error, fields with no live value, failsafe on fallback timings, "Auto" Vcore |
+| `quirks/testing.toml` | Stability testing | y-cruncher launcher and worker, TestMem5 coverage and wording, CPU heat inside a RAM test, run counts, WHEA windows |
+| `quirks/windows.toml` | Windows | crash dumps during sweeps, Windows Recovery, 0x9F shutdown hangs, WHEA history, WSL swap in Temp, the old iGPU driver and Windows Update, mixed-adapter displays |
+| `quirks/thermal.toml` | Cooling | loop sensor position, core-to-water drift |
+
+The same quirks in plain prose, with the measurements behind them, are indexed in the field notes:
+[raptor-lake-field-notes/quirks.md](https://github.com/Xipzer/raptor-lake-field-notes/blob/master/quirks.md).
+The SCEWIN details (token map, failsafe design and limits) are in
+[scewin.md](https://github.com/Xipzer/raptor-lake-field-notes/blob/master/scewin.md), and the test method in
+[validation.md](https://github.com/Xipzer/raptor-lake-field-notes/blob/master/validation.md).
+
+## Results it was built from
+
+On the reference machine (i9-14900KS, ASRock Z790I Lightning WiFi, 2x24 GB SK hynix M-die):
+
+| Part | Final | Found by |
+|---|---|---|
+| CPU | 57x all P-cores, E-cores 46x, ring 50x, Fixed 1.320 V, LLC 1 | 10-minute sweeps, then 30-minute Cinebench runs with GPU heat; 1.310 V failed, 1.320 V passed twice |
+| RAM | DDR5-8400 Gear 2, 38-49-46-64, tCWL 34, tRFC 660, tRFCpb 420, tREFI 32767, TX 1.35 V, VDD2 1.45 V, DIMM 1.50 / 1.48 V | One field per boot, two passes to keep, controls, then at-rest 45 min + y-cruncher 60 min + TestMem5 60 min |
+
+Full tables, every failure and the mistakes: [raptor-lake-field-notes](https://github.com/Xipzer/raptor-lake-field-notes).
+
 ## Safety, in plain words
 
 Read this before you run anything that writes.

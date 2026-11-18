@@ -90,3 +90,45 @@ remediation = [
 ]
 tuning = "Every harness step counts new WHEA records; any is a FAIL."
 sources = ["https://www.overclock.net/threads/about-whea-event-19-warnings.1536052/"]
+
+[[quirk]]
+id = "win-wsl-swap-in-temp"
+title = "WSL keeps its live swap file in %LOCALAPPDATA%\\Temp"
+category = "windows"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+symptom = "A Temp clean-up deletes or fails on swap.vhdx while WSL runs."
+cause = "The default swapFile is %Temp%\\<VM id>\\swap.vhdx. Old GUID folders are orphans; the newest is live."
+remediation = ["Never glob-delete Temp on a WSL host. Exclude the live folder, or move swap with swapFile= in .wslconfig."]
+tuning = "Before a memory test also drop the WSL page cache, or testers size themselves on less memory."
+sources = ["https://learn.microsoft.com/en-us/windows/wsl/wsl-config", "https://greengorych.io/blog/keeping-system-clean-crash-dumps-and-orphaned-swaps/"]
+
+[[quirk]]
+id = "win-igpu-old-driver-wu"
+title = "An old board-specific Intel iGPU driver crashes HWiNFO, and Windows Update reinstalls it"
+category = "windows"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel"] }
+symptom = "HWiNFO hangs at 'Detecting GPUs' in ze_intel_gpu64.dll; the fix is undone days later."
+cause = "Windows ranks a package naming the board's exact IDs above a newer generic one, and Windows Update delivers it again."
+remediation = [
+  "Export, then remove the old package with pnputil /delete-driver <inf> /uninstall (no /force).",
+  "Block driver delivery: HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate ExcludeWUDriversInQualityUpdate=1. Or HWiNFO Settings > Safety > oneAPI Support off.",
+]
+tuning = "Re-check display drivers after any driver clean-up."
+sources = ["https://www.hwinfo.com/forum/threads/hwinfo64-8-60-6120-crashes-during-initialization-%E2%80%94-intel-level-zero-dll-asus-g16-core-ultra-9-185h.11389/", "https://www.intel.com/content/www/us/en/support/articles/000087834/graphics.html", "own measurement: reference machine, 15 and 18 Nov"]
+
+[[quirk]]
+id = "win-igpu-mixed-adapter"
+title = "A monitor on the iGPU slows the discrete GPU; the idle iGPU itself draws almost nothing"
+category = "windows"
+severity = "NOTE"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel"] }
+symptom = "GPU benchmarks about 5.5% lower with one of several monitors on the motherboard output."
+cause = "Frames that cross between adapters need copies over PCIe. The idle UHD 770 drew about 0.008 W, so disabling it frees no CPU power."
+remediation = ["Put every monitor on the graphics card and disable the iGPU (BIOS: IGPU Multi-Monitor Disabled), unless you need it."]
+tuning = "Do not expect CPU voltage or temperature headroom from disabling the iGPU."
+sources = ["https://help.xmg.gg/hc/en-gb/articles/40377154604317-What-is-the-difference-between-iGPU-and-dGPU-connections-for-external-monitors", "own measurement: reference machine (raptor-lake-field-notes windows.md), 18 Nov"]

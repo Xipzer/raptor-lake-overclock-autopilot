@@ -1,0 +1,92 @@
+# AMI SCEWIN (AMISCE) behaviour seen while writing BIOS settings from Windows. Applies to AMI firmware in general;
+# the reference board is an ASRock Z790I Lightning WiFi, BIOS 10.01, SCEWIN 5.05.01.0002.
+
+[[quirk]]
+id = "scewin-prompt-live-value"
+title = "SCEWIN prompts embed the live value, so a stale script silently skips questions"
+category = "bios"
+severity = "WARN"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+symptom = "An import reports success, but a changed setting is not applied. Or: 'System configuration not modified' when a change was expected."
+cause = "SCEWIN matches each setup question by its full prompt text. On many DRAM questions the prompt contains the current trained value (for example 'tRFC 922'). A script built from an older export carries the old prompt and no longer matches."
+remediation = [
+  "Build every import from a fresh export taken just before the write; change only values, never prompts.",
+  "Re-export after the import and compare by token, not by name.",
+]
+tuning = "The harness keys every field on its token (rlh/scewin.py) and always exports first. A startup failsafe must do the same at restore time."
+sources = [
+  "own measurement: reference machine (raptor-lake-field-notes scewin.md), 12 Nov: tRFC 740 skipped from a stale script",
+  "https://github.com/ab3lkaizen/SCEHUB (documents 'Unmatched question' and 'System configuration not modified' with other causes)",
+]
+
+[[quirk]]
+id = "scewin-partial-write"
+title = "A partial BIOS write can reset every field you did not pass"
+category = "bios"
+severity = "WARN"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+symptom = "After writing three fields, every other tuned timing is back at its XMP or baseline value."
+cause = "A writer that starts from a saved golden script applies that script's values to every field it was not told about."
+remediation = [
+  "Always pass the complete intended set (every tuned field plus the change).",
+  "Read back stored values from a fresh export and require zero mismatches before rebooting.",
+]
+tuning = "The SCEWIN backend (rlh/backends.py) copies drifted values back from the golden script by design, so the engine always calls it with the full kept set plus the step. Write your own scripts the same way."
+sources = ["own measurement: reference machine (raptor-lake-field-notes scewin.md), 14 Nov"]
+
+[[quirk]]
+id = "scewin-tcg-noise"
+title = "'Error in writing variable TcgStorageDynamicSetupVar to NVRAM' on every import"
+category = "bios"
+severity = "INFO"
+confidence = "thin"
+platform = { "board.vendor" = ["asrock"] }
+symptom = "Every SCEWIN import prints this error, and PowerShell wraps SCEWIN's stderr as NativeCommandError."
+cause = "A write-protected TCG storage variable in the script. Our own fields still applied every time."
+remediation = ["Judge success by 'Password accepted' plus 'imported successfully' and by a clean read-back, not by the absence of errors."]
+tuning = "campaign/ramsweep.py requires 'Password accepted'; tools/failsafe.ps1 requires 'imported successfully' or 'not modified'. Neither looks at this line."
+sources = ["own measurement: reference machine (raptor-lake-field-notes scewin.md), every import 12 to 18 Nov", "no public report found for this variable"]
+
+[[quirk]]
+id = "scewin-no-live-label"
+title = "Some BIOS fields have no live value in a SCEWIN export"
+category = "bios"
+severity = "NOTE"
+confidence = "source"
+platform = { "board.vendor" = ["asrock"] }
+symptom = "Vcore, the E-core ratio, DIMM VDD/VDDQ and per-core ratios show only the stored value; there is no trained label to compare."
+cause = "Only questions whose prompt carries a label expose what the board actually runs."
+remediation = ["Verify those fields another way: HWiNFO PMIC VDD/VDDQ and VR VOUT, the measured E-core clock."]
+tuning = "Treat these as stored-only in your plan: a read-back proves the write, not that the board runs it."
+sources = ["own measurement: reference machine (raptor-lake-field-notes scewin.md section 5)"]
+
+[[quirk]]
+id = "scewin-failsafe-fallback"
+title = "A prepared restore script does nothing on training fallback timings"
+category = "bios"
+severity = "WARN"
+confidence = "source"
+platform = { "cpu.vendor" = ["intel", "amd"] }
+symptom = "A startup failsafe imports the last good script after a failed training and reports 'System configuration not modified'."
+cause = "On fallback timings every DRAM prompt holds a different live value, so the prepared script matches nothing (see scewin-prompt-live-value)."
+remediation = [
+  "At restore time take a fresh export and write the wanted values into it by token (tools/failsafe.ps1 v2).",
+  "Test the failsafe on purpose with no change before relying on it.",
+]
+tuning = "Even v2 cannot help with a no-POST, a hard freeze, or a step that kills Windows before the task has run twice (about 18 s into boot). Gate such steps on a person being present."
+sources = ["own measurement: reference machine (raptor-lake-field-notes scewin.md, failsafe section), 13 to 14 Nov"]
+
+[[quirk]]
+id = "asrock-auto-vcore-adaptive"
+title = "ASRock 'Auto' CPU voltage is adaptive and high"
+category = "board"
+severity = "WARN"
+confidence = "source"
+platform = { "board.vendor" = ["asrock"], "cpu.vendor" = ["intel"] }
+symptom = "A recovery note that says 'set Vcore back to Auto' puts the CPU on adaptive voltage of about 1.38 to 1.46 V on the reference board."
+cause = "Auto hands the voltage to the CPU's own V/F curve plus board defaults."
+remediation = ["Recovery steps always name an explicit voltage with mode Fixed (or a calibrated adaptive setup), never Auto."]
+tuning = "Write every recovery card with numbers only."
+sources = ["own measurement: reference machine (raptor-lake-field-notes scewin.md), 13 Nov step card error"]
